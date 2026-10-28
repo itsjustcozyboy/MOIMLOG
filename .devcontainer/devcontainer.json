@@ -1,0 +1,1 @@
+{"name":"MOIMLOG","image":"mcr.microsoft.com/devcontainers/python:1-3.12-bookworm","features":{"ghcr.io/devcontainers/features/node:1":{"version":"24"}},"forwardPorts":[5173,8000],"portsAttributes":{"5173":{"label":"모임록 웹앱","onAutoForward":"notify"},"8000":{"label":"MOIMLOG API","onAutoForward":"silent"}},"postCreateCommand":"bash scripts/setup.sh"}

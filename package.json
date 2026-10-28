@@ -1,0 +1,1 @@
+{"name":"moimlog","private":true,"scripts":{"dev":"bash scripts/dev.sh","build":"npm --prefix frontend run build","test":"npm --prefix frontend test && .venv/bin/python -m pytest backend/tests -q","test:e2e":"npm --prefix frontend run test:e2e"}}

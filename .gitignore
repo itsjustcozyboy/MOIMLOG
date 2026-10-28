@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+*.tsbuildinfo
+backend/data/
+backend/templates/*.docx
+artifacts/
+frontend/test-results/
+frontend/playwright-report/
+.DS_Store

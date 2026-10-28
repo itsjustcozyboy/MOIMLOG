@@ -1,0 +1,12 @@
+services:
+  moimlog:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - moimlog-data:/app/backend/data
+      - ./backend/templates:/app/backend/templates:ro
+    restart: unless-stopped
+volumes:
+  moimlog-data:

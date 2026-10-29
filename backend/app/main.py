@@ -12,7 +12,7 @@ from .schemas import MeetingInput, Credentials, SettingsInput, TranscriptInput, 
 from .services.transcript import parse_transcript
 from .services.ai_analysis import analyze, validate_people
 from .services.docx_generator import generate
-from .services.clova import transcribe, FORMATS
+from .services.groq import transcribe, FORMATS
 
 password_hash=PasswordHash.recommended()
 TASKS=set()
@@ -120,7 +120,7 @@ def logout(request:Request,response:Response):
 
 @app.get('/api/config')
 def config():
-    return {'ai':bool(os.getenv('OPENAI_API_KEY')),'speech':bool(os.getenv('CLOVA_SPEECH_SECRET') and os.getenv('CLOVA_SPEECH_INVOKE_URL') and shutil.which('ffprobe')),'maxAudioMB':100,'maxTextMB':2,'maxAudioMinutes':120}
+    return {'ai':bool(os.getenv('OPENAI_API_KEY')),'speech':bool(os.getenv('GROQ_API_KEY') and shutil.which('ffprobe') and shutil.which('ffmpeg')),'maxAudioMB':100,'maxTextMB':2,'maxAudioMinutes':120}
 @app.get('/api/me')
 def me(user=Depends(current)):return user
 @app.put('/api/me')
@@ -179,7 +179,7 @@ async def upload(mid:str,file:UploadFile=File(...),user=Depends(current)):
         if '\x00' in text or not text.strip() or len(text)>1000000:raise HTTPException(400,'유효한 TXT 전사문이 필요합니다. 최대 100만 자입니다.')
         d.update(text=text,segments=parse_transcript(text),mapping={},step=3,status='draft')
     elif ext in FORMATS:
-        if not config()['speech']:raise HTTPException(503,'CLOVA 설정이 필요합니다. TXT 업로드를 이용해 주세요.')
+        if not config()['speech']:raise HTTPException(503,'Groq 설정이 필요합니다. TXT 업로드를 이용해 주세요.')
         raw=await read_upload(file,100*1024*1024)
         for p in folder(user['id']).glob(mid+'.audio.*'):p.unlink(missing_ok=True)
         path=folder(user['id'])/(mid+'.audio'+ext);path.write_bytes(raw);d['audio']=path.name
@@ -231,7 +231,7 @@ async def analysis(mid:str,body:AnalysisInput,user=Depends(current)):
 async def stt(mid:str,body:AnalysisInput,user=Depends(current)):
     d=owned(mid,user)
     if not body.consent:raise HTTPException(400,'참석자 녹음 및 외부 전송 동의가 필요합니다.')
-    if not d.get('audio') or not config()['speech']:raise HTTPException(400,'음성 파일과 CLOVA 설정을 확인해 주세요.')
+    if not d.get('audio') or not config()['speech']:raise HTTPException(400,'음성 파일과 Groq 설정을 확인해 주세요.')
     return launch(mid,user,d,'stt')
 @app.get('/api/meetings/{mid}/report')
 def report(mid:str,user=Depends(current)):

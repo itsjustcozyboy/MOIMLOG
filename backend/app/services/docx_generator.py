@@ -57,6 +57,10 @@ def original_layout(document, data):
             run.text=value(person,key)
         # Fixed template heights clip long text; retain minimum height and allow expansion.
         row.height_rule=WD_ROW_HEIGHT_RULE.AT_LEAST
+        # A row taller than a page must be allowed to continue on the next page.
+        trpr=row._tr.get_or_add_trPr()
+        for restriction in trpr.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}cantSplit'):
+            trpr.remove(restriction)
     for p in document.paragraphs:
         if '순 장' in p.text and '월' in p.text and '일' in p.text:
             year,month,day=data['meetingDate'].split('-')

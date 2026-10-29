@@ -29,6 +29,7 @@ def cleanup():
             days=json.loads(u.settings).get('retentionDays',90)
             for m in db.scalars(select(Meeting).where(Meeting.user_id==u.id,Meeting.updated<now-days*86400)):
                 for p in folder(u.id).glob(m.id+'.*'):p.unlink(missing_ok=True)
+                live.delete_recordings(mid=m.id)
                 db.delete(m)
         db.commit()
 
@@ -45,8 +46,10 @@ async def lifespan(app):
         while True:
             await asyncio.sleep(3600);cleanup()
     task=asyncio.create_task(periodic())
+    live_task=asyncio.create_task(live.worker(publish_live))
     yield
     task.cancel()
+    live_task.cancel()
     for t in TASKS:t.cancel()
 
 app=FastAPI(title='MOIMLOG API',lifespan=lifespan)
@@ -83,6 +86,9 @@ def save(mid,user,data):
     return owned(mid,user)
 
 def idle(d):
+    if d.get('id'):
+        with live.connect() as db:r=db.execute('SELECT id FROM recordings WHERE mid=?',(d['id'],)).fetchone()
+        if r and not live.status(r['id'])['complete']:raise HTTPException(409,'진행 중인 녹음의 저장과 전사를 먼저 완료해 주세요.')
     if d.get('job',{}).get('state')=='processing':raise HTTPException(409,'처리 중입니다. 완료 후 수정해 주세요.')
 
 def session(response,user_id):
@@ -132,6 +138,7 @@ def update_me(body:SettingsInput,user=Depends(current)):
 def delete_me(user=Depends(current)):
     with SessionLocal() as db:
         db.execute(delete(Meeting).where(Meeting.user_id==user['id']));db.execute(delete(AuthSession).where(AuthSession.user_id==user['id']));db.execute(delete(User).where(User.id==user['id']));db.commit()
+    live.delete_recordings(owner=user['id'])
     shutil.rmtree(DATA/user['id'],ignore_errors=True);return {'ok':True}
 
 @app.post('/api/meetings')
@@ -156,8 +163,9 @@ def patch(mid:str,body:MeetingInput,user=Depends(current)):
     d.update(incoming);return save(mid,user,d)
 @app.delete('/api/meetings/{mid}')
 def delete_meeting(mid:str,user=Depends(current)):
-    d=owned(mid,user);idle(d)
+    d=owned(mid,user)
     with SessionLocal() as db:db.execute(delete(Meeting).where(Meeting.id==mid));db.commit()
+    live.delete_recordings(mid=mid)
     for p in folder(user['id']).glob(mid+'.*'):p.unlink(missing_ok=True)
     return {'ok':True}
 
@@ -253,6 +261,75 @@ def template_path(user):
     expected='26_순보고서.docx'
     # macOS uploads may use decomposed Hangul filenames on Linux filesystems.
     return next((p for p in directory.glob('*.docx') if unicodedata.normalize('NFC',p.name)==expected),directory/expected)
+# Live capture uses authenticated, idempotent sequence uploads.
+from .services import live
+from pydantic import BaseModel, Field
+class LiveStart(BaseModel):
+    consent: bool
+    mock: bool = False
+class LiveEnd(BaseModel):
+    count: int = Field(ge=0,le=10000)
+
+def live_owned(mid,user):
+    owned(mid,user)
+    with live.connect() as db:r=db.execute('SELECT * FROM recordings WHERE mid=? AND owner=?',(mid,user['id'])).fetchone()
+    if not r:raise HTTPException(404,'녹음 세션이 없습니다.')
+    return dict(r)
+
+def publish_live(mid,user,s):
+    d=owned(mid,user)
+    d.update(segments=s['segments'],text='\n'.join(f"화자 미확인 [{x['timestamp']}]: {x['text']}" for x in s['segments']),mapping={},sttMetadata={'provider':s['mode'],'diarization':False},status='draft')
+    d.pop('report',None)
+    save(mid,user,d)
+
+@app.post('/api/meetings/{mid}/recording')
+def start_live(mid:str,body:LiveStart,user=Depends(current)):
+    d=owned(mid,user)
+    if d.get('job',{}).get('state')=='processing':raise HTTPException(409,'기존 작업 처리 중입니다.')
+    if not body.consent:raise HTTPException(400,'녹음 및 Groq 전송 동의가 필요합니다.')
+    if not body.mock and not os.getenv('GROQ_API_KEY'):raise HTTPException(503,'Groq 키가 없습니다. Mock 체험을 선택해 주세요.')
+    return live.create(mid,user['id'],'mock' if body.mock else 'groq')
+
+@app.get('/api/meetings/{mid}/recording')
+def get_live(mid:str,user=Depends(current)):
+    from .services.budget import summary
+    return {**live.status(live_owned(mid,user)['id']), 'budget':summary()}
+
+@app.put('/api/meetings/{mid}/recording/chunks/{seq}')
+async def chunk_live(mid:str,seq:int,file:UploadFile=File(...),user=Depends(current)):
+    r=live_owned(mid,user);raw=await read_upload(file,3*1024*1024)
+    try:live.put(r['id'],seq,raw)
+    except ValueError as e:raise HTTPException(409,str(e))
+    return {'saved':seq}
+
+@app.post('/api/meetings/{mid}/recording/end')
+def end_live(mid:str,body:LiveEnd,user=Depends(current)):
+    r=live_owned(mid,user)
+    with live.connect() as db:
+        maximum=db.execute('SELECT MAX(seq) FROM chunks WHERE rid=?',(r['id'],)).fetchone()[0]
+        if (maximum is not None and maximum>=body.count) or (r['ended'] and r['expected']!=body.count):raise HTTPException(409,'종료 구간 수가 일치하지 않습니다.')
+        db.execute('UPDATE recordings SET ended=1,expected=? WHERE id=?',(body.count,r['id']))
+    s=live.status(r['id']);publish_live(mid,user,s);return s
+
+@app.post('/api/meetings/{mid}/recording/retry')
+def retry_live(mid:str,user=Depends(current)):
+    r=live_owned(mid,user)
+    with live.connect() as db:db.execute("UPDATE chunks SET state='queued',attempts=0,available=0 WHERE rid=? AND state IN ('failed','budget')",(r['id'],))
+    return {'ok':True}
+
+@app.post('/api/meetings/{mid}/recording/review')
+def review_live(mid:str,user=Depends(current)):
+    r=live_owned(mid,user);s=live.status(r['id'])
+    if not s['complete']:raise HTTPException(409,'모든 구간의 저장과 전사를 마친 뒤 검토할 수 있습니다.')
+    publish_live(mid,user,s);d=owned(mid,user);d['step']=3;return save(mid,user,d)
+
+@app.get('/api/meetings/{mid}/recording/audio/{seq}')
+def audio_live(mid:str,seq:int,user=Depends(current)):
+    r=live_owned(mid,user)
+    with live.connect() as db:row=db.execute('SELECT audio FROM chunks WHERE rid=? AND seq=?',(r['id'],seq)).fetchone()
+    if not row:raise HTTPException(404)
+    return Response(row['audio'],media_type='audio/wav',headers={'Content-Disposition':f'attachment; filename="recording-{seq:05}.wav"'})
+
 @app.get('/api/template')
 def template_status(user=Depends(current)):return {'exists':template_path(user).exists(),'name':'26_순보고서.docx'}
 @app.post('/api/template')

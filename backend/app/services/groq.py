@@ -20,7 +20,8 @@ async def transcribe(path:Path):
             for part in sorted(Path(tmp).glob('*.mp3')):
                 seconds=float(json.loads(await run('ffprobe','-v','error','-show_entries','format=duration','-of','json',str(part)))['format']['duration'])
                 if part.stat().st_size>24*1024*1024: raise ValueError('압축 파일이 API 제한을 초과했습니다.')
-                reserve('groq',max(10,seconds)/3600*.04*float(os.getenv('USD_KRW','1500')),{'audioSeconds':seconds,'model':'whisper-large-v3-turbo','status':'reserved'})
+                from .live import reserve_upload
+                await reserve_upload(seconds)
                 with part.open('rb') as f:
                     response=await client.post('https://api.groq.com/openai/v1/audio/transcriptions',headers={'Authorization':'Bearer '+os.environ['GROQ_API_KEY']},files={'file':(part.name,f)},data={'model':'whisper-large-v3-turbo','language':'ko','response_format':'verbose_json'})
                 response.raise_for_status()

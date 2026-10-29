@@ -10,7 +10,7 @@ def parse_transcript(text: str):
         if not line.strip(): continue
         m=pattern.match(line) or stamp.match(line)
         if m:
-            current={'speaker':m[1].strip(),'text':m[3].strip(),'timestamp':m[2] or ''}
+            current={'speaker':None if m[1].strip() in ('미확인','화자 미확인') else m[1].strip(),'text':m[3].strip(),'timestamp':m[2] or ''}
             segments.append(current)
         elif current:
             current['text']+='\n'+line

@@ -19,7 +19,7 @@ async def analyze(data, mode):
             rows.append(Sharing(participantId=p['id'],name=p['name'],sermonSharing='',lifeSharing='\n'.join(texts),prayerRequests='',prayerSource='none',needsReview=True,warnings=['로컬 검토 모드: 원문을 삶나눔에 임시 배치했습니다. 항목을 직접 분류해 주세요.']))
         return Report(meetingDate=data['meetingDate'],leader=data['leader'],meetingSummary='로컬 검토 초안 · AI 분석을 수행하지 않았습니다.',participants=rows,unassignedStatements=[s['text'] for s in segments if not mapping.get(s.get('speaker'))],warnings=['AI 분석 결과가 아닙니다. 원문 기반 수동 검토가 필요합니다.'])
     if not os.getenv('OPENAI_API_KEY'): raise ValueError('OpenAI 키가 없습니다. 로컬 검토 모드를 선택해 주세요.')
-    client=AsyncOpenAI(timeout=120,max_retries=1)
+    client=AsyncOpenAI(timeout=120,max_retries=0)
     # Split on segment boundaries; split unusually large utterances too. Every character is retained.
     chunks=[]; chunk=[]; size=0
     for s in segments:

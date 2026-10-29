@@ -13,3 +13,11 @@ def reserve(provider, amount, usage):
         if total+amount>float(os.getenv('AI_MONTHLY_BUDGET_KRW','5000')):
             raise ValueError('월 AI 예산 초과 위험으로 추가 처리를 차단했습니다.')
         db.execute('INSERT INTO usage VALUES (?,?,?,?)',(month,provider,amount,json.dumps(usage)))
+
+
+def summary():
+    with sqlite3.connect(DATA/'usage.sqlite') as db:
+        db.execute('CREATE TABLE IF NOT EXISTS usage (month TEXT, provider TEXT, krw REAL, detail TEXT)')
+        month=datetime.now(timezone.utc).strftime('%Y-%m')
+        total=db.execute('SELECT COALESCE(SUM(krw),0) FROM usage WHERE month=?',(month,)).fetchone()[0]
+    return {'month':month,'estimatedKrw':round(total,2),'limitKrw':float(os.getenv('AI_MONTHLY_BUDGET_KRW','5000'))}

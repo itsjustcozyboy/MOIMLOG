@@ -103,6 +103,8 @@ def test_ai_no_key_and_consent(account,meeting):
     assert account.post('/api/meetings/'+meeting['id']+'/analyze',json={'mode':'ai','consent':True},headers=H).status_code==400
 
 def test_ai_failure_retries_without_exposing_secrets(monkeypatch):
+    monkeypatch.setenv("OPENAI_INPUT_USD_PER_MILLION","0.1")
+    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_MILLION","0.1")
     monkeypatch.setenv('OPENAI_API_KEY','secret-test')
     class Failing:
         calls=0
@@ -114,6 +116,8 @@ def test_ai_failure_retries_without_exposing_secrets(monkeypatch):
     assert Failing.calls==2;assert 'secret-test' not in str(e.value)
 
 def test_ai_structured_response_missing_and_unknown_ids_retry(monkeypatch):
+    monkeypatch.setenv("OPENAI_INPUT_USD_PER_MILLION","0.1")
+    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_MILLION","0.1")
     monkeypatch.setenv('OPENAI_API_KEY','test')
     class Invalid:
         calls=0

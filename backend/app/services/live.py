@@ -112,7 +112,7 @@ async def tick(publish):
         raw,offset,seconds=prepare(db,row)
         if row['mode']=='groq':
             if not allowance(db,seconds):return
-            try:reserve('groq',max(10,seconds)/3600*.04*float(os.getenv('USD_KRW','1500')),{'recording':row['rid'],'seq':row['seq'],'attempt':row['attempts']+1,'audioSeconds':seconds})
+            try:reserve('groq',0,{'recording':row['rid'],'seq':row['seq'],'attempt':row['attempts']+1,'audioSeconds':seconds})
             except ValueError as e:
                 db.execute("UPDATE chunks SET state='budget',error=? WHERE rid=? AND seq=?",(str(e),row['rid'],row['seq']));return
             db.execute('INSERT INTO calls VALUES(?,?)',(time.time(),seconds))
@@ -168,7 +168,7 @@ async def reserve_upload(seconds):
         with connect() as db:
             db.execute('BEGIN IMMEDIATE')
             if allowance(db,seconds):
-                reserve('groq',max(10,seconds)/3600*.04*float(os.getenv('USD_KRW','1500')),{'audioSeconds':seconds,'source':'upload'})
+                reserve('groq',0,{'audioSeconds':seconds,'source':'upload'})
                 db.execute('INSERT INTO calls VALUES(?,?)',(time.time(),seconds))
                 return
-        await asyncio.sleep(2)
+        raise ValueError('Groq 음성 사용량 제한에 도달했습니다. 원본은 보존되었습니다. 나중에 수동 재시도해 주세요.')

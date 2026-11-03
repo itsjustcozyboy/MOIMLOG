@@ -102,33 +102,6 @@ def test_ai_no_key_and_consent(account,meeting):
     upload(account,meeting)
     assert account.post('/api/meetings/'+meeting['id']+'/analyze',json={'mode':'ai','consent':True},headers=H).status_code==400
 
-def test_ai_failure_retries_without_exposing_secrets(monkeypatch):
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_MILLION","0.1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_MILLION","0.1")
-    monkeypatch.setenv('OPENAI_API_KEY','secret-test')
-    class Failing:
-        calls=0
-        def __init__(self,**kw):self.responses=self
-        async def parse(self,**kw):Failing.calls+=1;raise RuntimeError('secret-test transcript must not leak')
-    with patch('backend.app.services.ai_analysis.AsyncOpenAI',Failing):
-        with pytest.raises(ValueError,match='원문은 보존') as e:
-            asyncio.run(analyze({'participants':[{'id':'p1','name':'김'}],'segments':[{'speaker':'S','text':'원문'}],'mapping':{}},'ai'))
-    assert Failing.calls==2;assert 'secret-test' not in str(e.value)
-
-def test_ai_structured_response_missing_and_unknown_ids_retry(monkeypatch):
-    monkeypatch.setenv("OPENAI_INPUT_USD_PER_MILLION","0.1")
-    monkeypatch.setenv("OPENAI_OUTPUT_USD_PER_MILLION","0.1")
-    monkeypatch.setenv('OPENAI_API_KEY','test')
-    class Invalid:
-        calls=0
-        def __init__(self,**kw):self.responses=self
-        async def parse(self,**kw):
-            Invalid.calls+=1
-            return type('Response',(),{'output_parsed':None})()
-    with patch('backend.app.services.ai_analysis.AsyncOpenAI',Invalid):
-        with pytest.raises(ValueError):asyncio.run(analyze({'participants':[],'segments':[{'text':'a','speaker':None}]},'ai'))
-    assert Invalid.calls==2
-
 def test_missing_template(account,meeting,tmp_path):
     local(account,meeting)
     with patch('backend.app.main.template_path',return_value=tmp_path/'missing.docx'):

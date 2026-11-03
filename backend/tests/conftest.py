@@ -3,6 +3,7 @@ import os, tempfile
 os.environ['DATA_DIR']=tempfile.mkdtemp(prefix='moimlog-tests-')
 os.environ['DATABASE_URL']='sqlite:///'+os.environ['DATA_DIR']+'/test.db'
 os.environ.pop('OPENAI_API_KEY',None)
+os.environ.pop('GROQ_API_KEY',None)
 import pytest
 from fastapi.testclient import TestClient
 from backend.app.main import app, ATTEMPTS

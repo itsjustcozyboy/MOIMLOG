@@ -126,7 +126,7 @@ def logout(request:Request,response:Response):
 
 @app.get('/api/config')
 def config():
-    return {'ai':bool(os.getenv('OPENAI_API_KEY')),'speech':bool(os.getenv('GROQ_API_KEY') and shutil.which('ffprobe') and shutil.which('ffmpeg')),'maxAudioMB':100,'maxTextMB':2,'maxAudioMinutes':120}
+    return {'ai':bool(os.getenv('GROQ_API_KEY')),'speech':bool(os.getenv('GROQ_API_KEY') and shutil.which('ffprobe') and shutil.which('ffmpeg')),'maxAudioMB':100,'maxTextMB':2,'maxAudioMinutes':120}
 @app.get('/api/me')
 def me(user=Depends(current)):return user
 @app.put('/api/me')
@@ -233,7 +233,7 @@ def launch(mid,user,d,kind,mode=None):
 async def analysis(mid:str,body:AnalysisInput,user=Depends(current)):
     d=owned(mid,user)
     if not d.get('segments'):raise HTTPException(400,'전사문을 먼저 업로드해 주세요.')
-    if body.mode=='ai' and (not body.consent or not config()['ai']):raise HTTPException(400,'OpenAI 설정 및 외부 전송 동의가 필요합니다.')
+    if body.mode=='ai' and (not body.consent or not config()['ai']):raise HTTPException(400,'Groq 설정 및 외부 전송 동의가 필요합니다.')
     return launch(mid,user,d,'analysis',body.mode)
 @app.post('/api/meetings/{mid}/transcribe')
 async def stt(mid:str,body:AnalysisInput,user=Depends(current)):

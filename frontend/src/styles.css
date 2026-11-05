@@ -7,3 +7,33 @@
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .live-transcript{max-height:340px;overflow-y:auto;text-align:left;border:1px solid var(--border,#e5e7eb);border-radius:16px;padding:16px;margin:20px 0;background:var(--surface,#fff)}
 .live-transcript p{padding:8px 0;margin:0;line-height:1.7}.live-transcript small{color:var(--muted,#6b7280)}.temporary-caption{padding:12px;border:1px dashed #a5b4fc;border-radius:12px}.recorder details{text-align:left;margin:16px 0}.recorder details a{display:inline-block;padding:8px}.recorder meter{width:120px;height:12px}
+/* iPhone-first calm application shell */
+:root { color-scheme: light dark; }
+body { background:#f8f7f4; }
+.sidebar,.desktop-footer,.breadcrumb,.today,.top-divider { display:none!important; }
+.workspace { margin-left:0!important; width:100%; }
+.topbar { padding:12px 20px!important; height:68px; }
+.mobile-logo { display:block!important; }
+main { max-width:760px!important; margin:auto!important; padding:24px 20px 110px!important; }
+.bottom-nav { display:flex!important; position:fixed; bottom:0; left:0; right:0; justify-content:space-around; padding:8px 8px max(8px,env(safe-area-inset-bottom)); background:var(--surface,#fff); border-top:1px solid #ddd; z-index:30; }
+.bottom-nav a { min-height:48px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
+.start-meeting { padding:32px 0 40px; text-align:center; color:#245bb0; }
+.start-meeting h2 { margin:20px 0 8px; }
+.start-meeting p { color:#626873; margin-bottom:24px; }
+.start-meeting .btn { width:100%; min-height:58px; }
+.meeting-row { display:flex; align-items:center; gap:12px; padding:20px 4px; border-bottom:1px solid #ddd; color:inherit; }
+.meeting-row>div { flex:1; }
+.meeting-row p { margin:6px 0 0; color:#626873; }
+.dashboard section { margin-bottom:28px; }
+button,input,select,summary,.icon-button { min-height:44px; }
+input,textarea,select { font-size:16px!important; }
+p,h1,h2,h3 { word-break:keep-all; overflow-wrap:anywhere; }
+.recording-timer { font-size:64px!important; font-variant-numeric:tabular-nums; }
+.recorder details { margin:24px 0; text-align:left; }
+@media(prefers-color-scheme:dark) { body {background:#151719;color:#eef0f4} .card,.topbar,.bottom-nav,.modal,.wizard-card {background:#202327!important;color:#eef0f4} input,textarea,select {background:#151719!important;color:#eef0f4!important} p,.field-hint {color:#b8c0cd!important} }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after {animation:none!important;transition:none!important;scroll-behavior:auto!important} }
+.review-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; border:0; background:transparent; color:inherit; font:inherit; font-weight:700; text-align:left; }
+.review-card [hidden] { display:none!important; }
+.journey-status { display:flex; justify-content:space-between; gap:16px; padding:12px 0; margin-bottom:16px; color:#526278; font-size:.9rem; }
+.optional-meeting summary { cursor:pointer; color:#245bb0; padding:12px 0; }
+.optional-meeting label { display:block; margin:12px 0; }

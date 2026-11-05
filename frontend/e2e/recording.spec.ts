@@ -9,11 +9,11 @@ test('Mock recording: live text, pause, offline persistence, reload, review and 
  await page.goto('/meeting/'+meeting.id);await page.getByRole('button',{name:'직접 녹음',exact:true}).click();
  await page.getByLabel('모든 참석자가 녹음과 Groq 음성 전송에 동의했습니다.').check();
  await page.getByLabel(/Mock STT 체험/).check();await page.getByRole('button',{name:'녹음 시작',exact:true}).click();
- await expect(page.getByRole('log')).toContainText('Mock 예시',{timeout:25000});
+ await page.getByText('나눔 전사문 보기', {exact:false}).click();await expect(page.getByRole('log')).toContainText('Mock 예시',{timeout:25000});
  await page.getByRole('button',{name:'일시정지',exact:true}).click();
  await page.getByRole('button',{name:'재개',exact:true}).click();
  await page.route('**/api/meetings/*/recording**',route=>route.abort());
- await page.waitForTimeout(1600);await page.getByRole('button',{name:'녹음 종료',exact:true}).click();
+ await page.waitForTimeout(1600);page.once('dialog', dialog=>dialog.accept());await page.getByRole('button',{name:'녹음 종료',exact:true}).click();
  await expect(page.getByText(/업로드 대기 [1-9]/)).toBeVisible({timeout:10000});
  await page.unroute('**/api/meetings/*/recording**');
  await expect(page.getByRole('button',{name:'최종 전사문 확인하기',exact:true})).toBeVisible({timeout:15000});
@@ -23,7 +23,8 @@ test('Mock recording: live text, pause, offline persistence, reload, review and 
  await page.getByRole('button',{name:'최종 전사문 확인하기',exact:true}).click();await expect(page.getByLabel('전사문 편집')).toContainText('화자 미확인');
  await page.getByRole('button',{name:'화자 확인하기'}).click();await page.getByRole('button',{name:'분석 준비하기'}).click();await page.getByRole('button',{name:'로컬 검토 초안 만들기',exact:true}).click();
  await expect(page.getByRole('heading',{name:'우리의 이야기가 잘 담겼나요?'})).toBeVisible();
- await page.getByRole('textbox',{name:'순장 삶나눔',exact:true}).fill('Mock 흐름 검증 후 수동 분류한 내용');await page.getByRole('button',{name:'보고서 완성하기'}).click();
+ await page.getByRole('button',{name:/순장 ·/}).click();await page.getByRole('textbox',{name:'순장 삶나눔',exact:true}).fill('Mock 흐름 검증 후 수동 분류한 내용');await page.getByRole('button',{name:'보고서 완성하기'}).click();
+ await page.getByRole('link',{name:'설정에서 양식 등록하기'}).click();await page.getByLabel('원본 DOCX 등록').setInputFiles('..\/artifacts/synthetic-test.docx');await page.goBack();
  const download=page.waitForEvent('download');await page.getByRole('button',{name:'DOCX 다운로드',exact:true}).click();expect((await download).suggestedFilename()).toContain('.docx');
  await page.request.delete('/api/me',{headers:h});
 });

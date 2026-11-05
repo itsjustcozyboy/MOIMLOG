@@ -1,0 +1,17 @@
+name: MOIMLOG
+options:
+  deploymentTarget:
+    iOS: '16.0'
+targets:
+  MOIMLOG:
+    type: application
+    platform: iOS
+    sources:
+      - path: MOIMLOG
+        excludes: [Info.plist]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.moimlog.app
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: MOIMLOG/Info.plist
+        SWIFT_VERSION: '5.0'

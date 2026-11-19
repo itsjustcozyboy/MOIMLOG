@@ -133,7 +133,14 @@ actor APIClient {
 }
 
 @MainActor final class AppState: ObservableObject {
-    @Published var server = UserDefaults.standard.string(forKey: "serverURL") ?? "" {
+    private var recorders: [String: LiveRecorder] = [:]
+    func liveRecorder(for id: String) -> LiveRecorder {
+        if let existing = recorders[id] { return existing }
+        let recorder = LiveRecorder()
+        recorders[id] = recorder
+        return recorder
+    }
+    @Published var server = UserDefaults.standard.string(forKey: "serverURL") ?? (Bundle.main.object(forInfoDictionaryKey: "DevelopmentServerURL") as? String ?? "") {
         didSet { connectionMessage = nil }
     }
     @Published var user: Profile?
@@ -236,6 +243,8 @@ actor APIClient {
             var serverError: Error?
             do { let _: OK = try await client.request("auth/logout", method: "POST") }
             catch { serverError = error }
+            recorders.values.forEach { $0.shutdown() }
+            recorders.removeAll()
             try await client.clearSession()
             user = nil
             meetings = []
@@ -247,6 +256,7 @@ actor APIClient {
 }
 
 @main struct MOIMLOGApp: App {
+    @UIApplicationDelegateAdaptor(RecordingAppDelegate.self) private var appDelegate
     @StateObject private var state = AppState()
     var body: some Scene { WindowGroup { RootView().environmentObject(state).task { await state.restore() } } }
 }

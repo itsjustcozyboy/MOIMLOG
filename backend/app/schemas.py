@@ -60,6 +60,7 @@ class Credentials(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=10, max_length=128)
     name: str = Field(default='순장님', max_length=60)
+    invitation: str = Field(default='', max_length=128)
 
 class SettingsInput(BaseModel):
     name: str = Field(min_length=1,max_length=60)

@@ -1,10 +1,12 @@
+import {issueTestInvite} from './invite';
 import {test,expect} from '@playwright/test';
 test.use({launchOptions:{args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']},permissions:['microphone']});
 test('Mock recording: live text, pause, offline persistence, reload, review and DOCX',async({page},testInfo)=>{
  test.setTimeout(120000);
  const h={'X-Moimlog':'1'};
  await page.goto('/');
- const registered=await page.request.post('/api/auth/register',{headers:h,data:{email:`record-${testInfo.project.name}-${Date.now()}@example.test`,password:'test-password-123',name:'녹음 테스트'}});expect(registered.ok()).toBeTruthy();
+ const invitation=await issueTestInvite(testInfo.project.use.baseURL!);
+ const registered=await page.request.post('/api/auth/register',{headers:h,data:{invitation,email:`record-${testInfo.project.name}-${Date.now()}@example.test`,password:'test-password-123',name:'녹음 테스트'}});expect(registered.ok()).toBeTruthy();
  const created=await page.request.post('/api/meetings',{headers:h,data:{meetingDate:'2026-10-29',leader:'순장',title:'Mock 녹음',participants:[{id:'p1',name:'순장'}],step:2}});const meeting=await created.json();
  await page.goto('/meeting/'+meeting.id);await page.getByRole('button',{name:'직접 녹음',exact:true}).click();
  await page.getByLabel('모든 참석자가 녹음과 Groq 음성 전송에 동의했습니다.').check();

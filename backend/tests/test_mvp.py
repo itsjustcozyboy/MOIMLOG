@@ -1,3 +1,4 @@
+from conftest import invitation
 import asyncio, io, json, time
 from pathlib import Path
 from unittest.mock import patch
@@ -139,7 +140,7 @@ def test_original_repeated_block_expansion(tmp_path):
 
 def test_cross_account_access_all_resources(account,meeting):
     local(account,meeting);account.post('/api/auth/logout',headers=H)
-    account.post('/api/auth/register',json={'email':str(time.time())+'@other.test','password':'another-password'},headers=H)
+    account.post('/api/auth/register',json={'email':str(time.time())+'@other.test','password':'another-password','invitation':invitation()},headers=H)
     base='/api/meetings/'+meeting['id']
     for path in ['', '/report','/transcription','/download']:
         assert account.get(base+path).status_code==404

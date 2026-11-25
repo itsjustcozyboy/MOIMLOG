@@ -10,10 +10,11 @@ from docx.enum.table import WD_ROW_HEIGHT_RULE
 from backend.app.services.docx_generator import generate
 
 
-TEMPLATE = next(p for p in Path('backend/templates').glob('*.docx')
-                if unicodedata.normalize('NFC', p.name) == '26_순보고서.docx')
+TEMPLATE = next((p for p in Path('backend/templates').glob('*.docx')
+                if unicodedata.normalize('NFC', p.name) == '26_순보고서.docx'), None)
 
 
+@pytest.mark.skipif(TEMPLATE is None, reason='Optional original church DOCX fixture is unavailable')
 @pytest.mark.parametrize('count', [6, 8, 10])
 @pytest.mark.parametrize('long_text', [False, True])
 def test_original_report(count, long_text):

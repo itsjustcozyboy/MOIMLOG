@@ -1,13 +1,14 @@
-import os, json, uuid, time, secrets, hashlib, asyncio, shutil
+import re, os, json, uuid, time, secrets, hashlib, asyncio, shutil
 from pathlib import Path
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI, HTTPException, Request, Response, Depends, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
+from sqlalchemy.exc import IntegrityError
 from pwdlib import PasswordHash
-from .db import SessionLocal, User, AuthSession, Meeting, DATA
+from .db import SessionLocal, User, AuthSession, Meeting, DATA, Administrator, Invitation
 from .schemas import MeetingInput, Credentials, SettingsInput, TranscriptInput, SpeakerInput, AnalysisInput, ReportUpdate
 from .services.transcript import parse_transcript
 from .services.ai_analysis import analyze, validate_people
@@ -55,21 +56,27 @@ async def lifespan(app):
 app=FastAPI(title='MOIMLOG API',lifespan=lifespan)
 @app.middleware('http')
 async def security(request,call_next):
-    if request.method not in ['GET','HEAD','OPTIONS'] and request.headers.get('x-moimlog')!='1':
+    if request.method not in ['GET','HEAD','OPTIONS'] and (
+        request.headers.get('x-moimlog') != '1' or
+        request.headers.get('sec-fetch-site') in {'cross-site', 'same-site'}
+    ):
         return Response('요청 출처를 확인할 수 없습니다.',status_code=403)
     response=await call_next(request)
     response.headers['Cache-Control']='no-store'
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['Referrer-Policy']='same-origin'
+    response.headers['X-Frame-Options']='DENY'
     return response
 
 def current(request:Request):
     token=request.cookies.get('moimlog_session','')
     with SessionLocal() as db:
         s=db.get(AuthSession,hashlib.sha256(token.encode()).hexdigest())
-        if not s or s.expires<int(time.time()):raise HTTPException(401,'로그인해 주세요.')
+        if not s or s.expires<=int(time.time()):raise HTTPException(401,'로그인해 주세요.')
         user=db.get(User,s.user_id)
-        return {'id':user.id,'email':user.email,**json.loads(user.settings)}
+        admin = db.get(Administrator, 1)
+        return {'id':user.id,'email':user.email,**json.loads(user.settings),
+                'isAdmin': bool(admin and admin.user_id == user.id)}
 
 def owned(mid,user):
     with SessionLocal() as db:
@@ -106,16 +113,68 @@ def auth(body:Credentials,response:Response,request:Request):
     key=request.client.host;now=time.time();ATTEMPTS[key]=[t for t in ATTEMPTS.get(key,[]) if now-t<300]
     if len(ATTEMPTS[key])>=20:raise HTTPException(429,'잠시 후 다시 시도해 주세요.')
     ATTEMPTS[key].append(now)
-    with SessionLocal() as db:
-        email=body.email.strip().lower()
-        user=db.scalar(select(User).where(User.email==email))
-        if action=='register':
-            if '@' not in email or user:raise HTTPException(400,'이메일을 확인하거나 로그인해 주세요.')
-            user=User(id=uid(),email=email,password=password_hash.hash(body.password),settings=dump({'name':body.name,'community':'','isLeader':True,'members':[],'retentionDays':90}))
-            db.add(user);db.commit()
-        elif not user or not password_hash.verify(body.password,user.password):raise HTTPException(401,'이메일 또는 비밀번호를 확인해 주세요.')
-        session(response,user.id)
+    email = body.email.strip().lower()
+    if action == 'register':
+        if not body.invitation:
+            raise HTTPException(403, '초대 링크가 필요합니다.')
+        if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email) or not body.name.strip():
+            raise HTTPException(422, '이메일과 이름을 확인해 주세요.')
+        digest = hashlib.sha256(body.invitation.encode()).hexdigest()
+        with SessionLocal() as db:
+            # Claim the token in the same transaction that creates the account.
+            claimed = db.execute(update(Invitation).where(
+                Invitation.digest == digest, Invitation.state == 'pending',
+                Invitation.expires > int(time.time()),
+            ).values(state='used'))
+            if claimed.rowcount != 1:
+                raise HTTPException(403, '만료되었거나 사용할 수 없는 초대입니다.')
+            user = User(id=uid(), email=email, password=password_hash.hash(body.password),
+                        settings=dump({'name':body.name.strip(),'community':'','isLeader':True,'members':[],'retentionDays':90}))
+            db.add(user)
+            try:
+                db.commit()
+            except IntegrityError:
+                raise HTTPException(400, '이메일을 확인하거나 로그인해 주세요.')
+    else:
+        with SessionLocal() as db:
+            user = db.scalar(select(User).where(User.email == email))
+            if not user or not password_hash.verify(body.password, user.password):
+                raise HTTPException(401, '이메일 또는 비밀번호를 확인해 주세요.')
+    session(response, user.id)
     return {'ok':True}
+
+def require_admin(user=Depends(current)):
+    if not user['isAdmin']:
+        raise HTTPException(403, '관리자 권한이 필요합니다.')
+
+@app.get('/api/admin/invitations', dependencies=[Depends(require_admin)])
+def list_invitations():
+    now = int(time.time())
+    with SessionLocal() as db:
+        return [{'id': invite.id, 'expires': invite.expires,
+                 'state': 'expired' if invite.state == 'pending' and invite.expires <= now else invite.state}
+                for invite in db.scalars(select(Invitation).order_by(Invitation.expires.desc()))]
+
+@app.post('/api/admin/invitations', dependencies=[Depends(require_admin)])
+def issue_invitation():
+    token = secrets.token_urlsafe(32)
+    invite = Invitation(digest=hashlib.sha256(token.encode()).hexdigest(),
+                        id=uid(), expires=int(time.time()) + 86400)
+    with SessionLocal() as db:
+        db.add(invite)
+        db.commit()
+    return {'id': invite.id, 'token': token, 'expires': invite.expires}
+
+@app.delete('/api/admin/invitations/{invite_id}', dependencies=[Depends(require_admin)])
+def revoke_invitation(invite_id: str):
+    with SessionLocal() as db:
+        result = db.execute(update(Invitation).where(
+            Invitation.id == invite_id, Invitation.state == 'pending',
+        ).values(state='revoked'))
+        if result.rowcount != 1:
+            raise HTTPException(404, '취소할 수 있는 초대가 없습니다.')
+        db.commit()
+    return {'ok': True}
 
 @app.post('/api/auth/logout')
 def logout(request:Request,response:Response):
@@ -136,6 +195,8 @@ def update_me(body:SettingsInput,user=Depends(current)):
     cleanup();return {'id':user['id'],'email':user['email'],**body.model_dump()}
 @app.delete('/api/me')
 def delete_me(user=Depends(current)):
+    if user["isAdmin"]:
+        raise HTTPException(409, "관리자 계정은 앱에서 삭제할 수 없습니다.")
     with SessionLocal() as db:
         db.execute(delete(Meeting).where(Meeting.user_id==user['id']));db.execute(delete(AuthSession).where(AuthSession.user_id==user['id']));db.execute(delete(User).where(User.id==user['id']));db.commit()
     live.delete_recordings(owner=user['id'])

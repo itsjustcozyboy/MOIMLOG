@@ -1,3 +1,4 @@
+from conftest import invitation
 import asyncio, io, wave, json
 import pytest
 from backend.app.services import live
@@ -26,15 +27,15 @@ def test_live_flow(account,meeting):
     account.delete('/api/meetings/'+meeting['id'],headers=H)
     with live.connect() as db:assert db.execute('SELECT COUNT(*) FROM chunks WHERE rid=?',(rid,)).fetchone()[0]==0
 
-def test_gap_and_budget(monkeypatch):
+def test_gap_and_free_quota(monkeypatch):
     r=live.create('gap','test','groq');live.put(r['id'],1,audio())
     asyncio.run(live.tick(lambda *args:None))
     assert live.status(r['id'])['chunks'][0]['attempts']==0
     live.put(r['id'],0,audio())
-    monkeypatch.setenv('AI_MONTHLY_BUDGET_KRW','0')
+    monkeypatch.setenv('GROQ_ASH','0')
     asyncio.run(live.tick(lambda *args:None))
-    s=live.status(r['id']);assert s['chunks'][0]['state']=='budget'
-    live.put(r['id'],2,audio(1)) # recording continues without paid calls
+    s=live.status(r['id']);assert s['chunks'][0]['state']=='queued' and s['chunks'][0]['attempts']==0
+    live.put(r['id'],2,audio(1)) # recording continues while quota is exhausted
     live.delete_recordings(mid='gap')
 
 def test_wav_overlap_limits_and_120_minutes(monkeypatch):
@@ -78,8 +79,10 @@ def test_owner_isolation(account,meeting):
     account.post(base,json={'consent':True,'mock':True},headers=H)
     account.post('/api/auth/logout',headers=H)
     assert account.get(base).status_code==401
-    account.post('/api/auth/register',json={'email':'other-live@test.example','password':'test-password-123','name':'다른 사용자'},headers=H)
+    account.post('/api/auth/register',json={'email':'other-live@test.example','password':'test-password-123','name':'다른 사용자','invitation':invitation()},headers=H)
     assert account.get(base).status_code==404
+    assert account.get(base+"/audio/0").status_code==404
+    assert account.post(base+"/retry",headers=H).status_code==404
 
 def test_boundary_dedup():
     r=live.create('dedup','test','mock')

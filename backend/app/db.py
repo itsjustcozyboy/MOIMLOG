@@ -24,4 +24,16 @@ class Meeting(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey('users.id'),index=True)
     data: Mapped[str] = mapped_column(Text)
     updated: Mapped[int]
+class Administrator(Base):
+    __tablename__ = 'administrator'
+    slot: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'), unique=True)
+
+class Invitation(Base):
+    __tablename__ = 'invitations'
+    digest: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, unique=True)
+    expires: Mapped[int]
+    state: Mapped[str] = mapped_column(String, default='pending')
+
 Base.metadata.create_all(engine)

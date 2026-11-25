@@ -3,7 +3,7 @@ import os, tempfile
 os.environ['DATA_DIR']=tempfile.mkdtemp(prefix='moimlog-tests-')
 os.environ['DATABASE_URL']='sqlite:///'+os.environ['DATA_DIR']+'/test.db'
 os.environ.pop('OPENAI_API_KEY',None)
-os.environ.pop('GROQ_API_KEY',None)
+os.environ['GROQ_API_KEY']=''
 import pytest
 from fastapi.testclient import TestClient
 from backend.app.main import app, ATTEMPTS
@@ -13,11 +13,21 @@ def client():
     ATTEMPTS.clear()
     with TestClient(app) as c:yield c
 
+def invitation(expires=None):
+    import hashlib, secrets, time, uuid
+    from backend.app.db import Invitation, SessionLocal
+    token = secrets.token_urlsafe(32)
+    with SessionLocal() as db:
+        db.add(Invitation(digest=hashlib.sha256(token.encode()).hexdigest(),
+                          id=str(uuid.uuid4()), expires=expires if expires is not None else int(time.time())+3600))
+        db.commit()
+    return token
+
 @pytest.fixture
 def account(client):
     import uuid
     email=str(uuid.uuid4())+'@test.example'
-    r=client.post('/api/auth/register',json={'email':email,'password':'test-password-123','name':'테스트 순장'},headers={'X-Moimlog':'1'})
+    r=client.post('/api/auth/register',json={'email':email,'password':'test-password-123','name':'테스트 순장','invitation':invitation()},headers={'X-Moimlog':'1'})
     assert r.status_code==200,r.text
     return client
 

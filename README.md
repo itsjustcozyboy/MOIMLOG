@@ -1,103 +1,55 @@
 # MOIMLOG
 
-## 20261117 작업 기록 — Oracle Cloud 서버 구축 및 초대제 PWA 방향 확정
+MOIMLOG(모임록)는 교회 소그룹 순장 약 6명이 순모임을 기록하고 교회 양식의 보고서를 만드는 웹 서비스입니다. 2026-11-26에 React 기반 Web/PWA를 공식 배포 플랫폼으로 확정했습니다. 브라우저에서 검증한 Groq 실시간 STT와 구축된 Oracle Cloud 웹 서버를 활용해 접속과 업데이트를 웹으로 통합합니다. 월 운영비 목표는 5,000원 이하이며 유료 API와 Apple 개발자 계정은 사용하지 않습니다.
 
-> **기록 기준:** 2026-11-17 작업 기록(한국 시간으로 자정을 넘겨 이어진 설정 포함). 아래 '완료'는 사용자가 Oracle 콘솔·SSH 터미널 및 브라우저에서 확인해 전달한 결과를 뜻합니다. GitHub 소스코드 변경이나 자동화된 운영 통합 테스트 완료를 의미하지 않습니다.
+## 주요 기능
 
-### 목표 및 제품 결정
+- 홈에서 모임을 시작하고 기록 탭에서 이어서 편집합니다. 로그인 세션은 서버 발급 쿠키로 유지합니다.
+- 참석자 동의를 받은 뒤 **웹 화면을 활성화한 상태에서 녹음**하거나 **별도 녹음 파일을 업로드**합니다. 직접 녹음은 AudioWorklet으로 구간을 만들고 IndexedDB에 저장해 연결 복구 후 서버로 재전송합니다.
+- Groq Whisper로 전사하고, 순장이 화자와 전사문을 확인한 뒤 GPT-OSS 초안을 편집합니다. 설정에서 등록한 교회 원본 `26_순보고서.docx` 양식으로 보고서를 생성하고 내려받습니다.
 
-- **대상:** 교회 소그룹 순장 약 6명, 최대 2시간 모임 녹음. 월 운영비 목표 5,000원 이하.
-- **주요 흐름:** 초대 링크 → 계정 생성·로그인 → 녹음 → Groq STT → 화자 확인 및 GPT-OSS 보고서 초안 → 순장 검토 → 기존 교회 DOCX 양식으로 완성.
-- **배포 방향 결정:** **선택 A — 설치형 웹앱(PWA)** 우선. App Store / TestFlight 배포 없이 초대 링크로 접속하고 iPhone Safari에서 홈 화면에 추가해 사용. 기존 SwiftUI iOS 소스는 삭제하지 않고 보존.
-- **서버 아키텍처:** 기존 FastAPI + React + Groq + SQLite를 Oracle Cloud Ubuntu VM에서 Docker Compose로 운영. GitHub Pages나 Vercel로 백엔드를 이전하지 않음.
+## 기술 아키텍처
 
-### 오늘 완료한 인프라 작업 (사용자 확인)
+React · TypeScript · Vite → FastAPI → SQLite 및 계정별 파일 / Groq Whisper 및 GPT-OSS. 개발 환경에서는 Vite가 `/api`를 FastAPI로 프록시합니다. 배포 이미지에서는 FastAPI가 빌드한 웹과 API를 같은 출처에서 제공합니다. 모바일 화면과 PWA manifest가 있으며 서비스 워커는 오프라인 탐색 안내를 제공합니다. 인증 API와 보고서는 서비스 워커에 캐시하지 않습니다.
 
-| 영역 | 완료·확인 내용 |
-| --- | --- |
-| Oracle Cloud | Always Free-eligible `VM.Standard.A1.Flex` 선택, Ubuntu 24.04 ARM64, 1 OCPU / 6GB RAM, 기본 부트 볼륨으로 `moimlog-server` 생성. **무료 표시는 월 과금 0원을 보증하지 않으므로 계정 사용량 점검 필요** |
-| 네트워크 | `moimlog-vcn`과 Public Subnet 생성, 공인 IPv4 할당, Mac → Ubuntu SSH 접속 확인 |
-| Docker | Docker Engine 및 Compose 설치; 사용자가 `docker compose version v5.8.0` 결과 확인 |
-| 배포 | GitHub MOIMLOG 코드 복제 및 `sudo docker compose up -d --build` 실행; `moimlog-moimlog-1` 컨테이너가 `Up` 상태로 확인됨 |
-| 내부 API | 컨테이너 포트를 `127.0.0.1:8000:8000`으로 바꿔 외부 직접 접근을 제한; `curl http://127.0.0.1:8000/api/config` 정상 응답을 사용자 확인 |
-| 환경변수 | Oracle VM의 별도 `.env`에 기존 Groq 키·`GROQ_FREE_ONLY=true`·`COOKIE_SECURE=true` 등을 설정. **실제 Groq 음성 전사/분석 호출은 미검증** |
-| 네트워크 보안 | Oracle Ingress에서 외부 HTTPS TCP 443 허용; HTTP 80과 FastAPI 8000은 외부 개방하지 않음. SSH 22는 현재 모든 IP 허용으로 확인되어 범위 축소 필요 |
-| HTTPS | Caddy **v2.11.9** 설치. IP 주소용 ACME 단기 인증서를 요청하는 Caddyfile 적용, `caddy validate`의 `Valid configuration` 확인. 사용자가 외부 HTTPS `/api/config` 접속 성공을 확인 |
-| 임시 접근 제어 | Caddy에서 `/api/auth/register`, `/docs`, `/redoc`, `/openapi.json` 경로 차단 설정. **회원가입의 서버 자체 초대제 검증은 아직 미구현** |
+## 웹 실행
 
-**주의:** Docker Compose의 로컬 포트 변경, Caddy 설정, Oracle 방화벽, VM의 `.env`는 **Oracle 서버에 적용한 운영 설정**이며 현재 GitHub의 `docker-compose.yml`과 동일하다고 가정하면 안 됩니다. 운영 설정을 재현 가능한 형태로 코드화·문서화하되 API 키, SSH 개인키, 실제 비밀 정보는 커밋하지 않습니다. 서비스 공인 IP는 README에 직접 기재하지 않습니다.
+Python, Node.js/npm, 음성 처리를 위한 FFmpeg를 준비합니다.
 
-### 20261117 기준 미완료·미검증
+```bash
+bash scripts/setup.sh
+npm run dev
+```
 
-- 실제 사용자 계정 생성, 외부 iPhone/PWA 로그인 및 세션 유지, 여러 계정 간 기록 격리 테스트.
-- 실기기 마이크 권한, 실제 Groq STT·GPT-OSS 분석, 교회 원본 `26_순보고서.docx` 업로드 및 보고서 DOCX 다운로드 전 과정.
-- **공개 회원가입은 현재 Caddy에서 차단**돼 있으므로 초대 링크 계정 생성 기능 도입 전에는 일반 사용자 가입이 불가. 최초 운영자 계정 생성 절차도 별도로 완료·검증해야 함.
-- 오디오 원본은 현재 라이브 녹음 큐의 SQLite BLOB과 기기 로컬 저장소에 남을 수 있으며, **STT 완료 후 자동 삭제가 아직 구현되지 않음**.
-- IP 주소용 단기 TLS 인증서의 **자동 갱신 성공 여부**, 백업·복구, 장시간 실행 및 서버 재부팅 뒤 자동 복구 미검증.
-- Oracle Always Free 용량/CPU·Groq Free 호출 한도/동시 녹음 처리량은 실제 모임 부하에 대한 검증 필요. 6명 동시 2시간 녹음은 기본 7,200 ASH 제한에서 준실시간 STT를 보장하지 못함.
+브라우저에서 `http://localhost:5173`을 엽니다. 설정 스크립트는 `.env`가 없을 때만 예제 파일을 복사합니다. 로컬 HTTP에서는 `COOKIE_SECURE=false`를 사용합니다. Groq 키 없이 로컬 검토 모드를 사용할 수 있습니다.
 
-### 다음 개발 계획 (우선순위)
+```bash
+npm run build
+npm --prefix frontend test
+.venv/bin/python -m pytest backend/tests -q
+docker compose config --quiet
+```
 
-1. **배포 보안과 재현성:** SSH 22 접속 허용 범위를 관리자의 IP로 축소(기존 SSH 접속 유지 확인 후), OS 보안 업데이트, Caddy 인증서 자동 갱신 검증, HTTPS/응답 헤더/인증/계정별 데이터 격리 점검. GitHub 설정과 Oracle 운영 파일 간 차이를 안전하게 관리.
-2. **서버 측 초대제:** 외부 공개 회원가입을 백엔드에서도 차단하고, 관리자 전용 초대 링크 발급·만료·일회용 사용·취소 기능 및 최초 관리자 안전 생성 절차 구현. Caddy 차단만으로 인증을 보장하지 않음.
-3. **PWA 설치 및 접속:** React 웹앱의 manifest, 서비스 워커, iPhone Safari '홈 화면에 추가' 흐름을 실제 기기에서 검증하고 초대 링크→회원가입→로그인 경험 완성. SwiftUI iOS 앱은 유지.
-4. **2시간 녹음 안정화:** 기존 AudioWorklet 약 15초 구간 분할 녹음과 IndexedDB 로컬 저장/재전송 보존. Screen Wake Lock(지원 기기), 화면·마이크·AudioContext 중단 감지, 복귀 후 재개와 누락 구간 복구를 보완. **iOS PWA의 화면 잠금·백그라운드 녹음 지속은 플랫폼 제약으로 보장하지 않으며**, 이를 UI에 명확히 안내.
-5. **음성 보관 최소화:** STT 및 전사문 저장이 완전히 확인된 후 짧은 복구 유예기간을 거쳐 음성 원본 삭제; 실패·재시도 구간은 보관. iPhone/브라우저 로컬 복사본 정리 및 SQLite 공간 회수 정책과 테스트 추가.
-6. **실사용 검증:** iPhone Safari/PWA에서 30·60·120분 테스트, 화면 잠금/앱 전환/통화/네트워크 끊김/재진입, 6명 동시 부하, 녹음→전사→수정→분석→DOCX 생성 회귀 테스트 및 개인정보 동의 검증.
-7. **운영 준비:** SQLite 볼륨 백업과 **복원 테스트**, 저장기간·삭제 정책, 무료 한도 모니터링, IP 변경 대응 및 장애 대응 안내 수립. 운영 사용자 온보딩 전 보안 검증 결과 기록.
+## Oracle Cloud 배포 구조
 
-**상태 요약:** Oracle VM의 **Docker + FastAPI + HTTPS 연결까지 사용자 확인 완료**. **초대제/PWA 설치 검증/실제 녹음/운영 보안 강화는 향후 작업**이며, 프로덕션 사용 가능이나 2시간 백그라운드 녹음 보장 상태가 아닙니다.
+브라우저 → HTTPS Caddy(Oracle VM 호스트) → `127.0.0.1:8000` → Docker Compose의 FastAPI. 2026-11-17 운영 기록에는 루프백 바인딩이 적용됐으며 당시 저장소에는 `8000:8000`이 남아 있었습니다. 현행 Compose 기본값은 `127.0.0.1:8000:8000`입니다.
 
----
+운영 반영 전 기존 Compose 프로젝트 이름, `moimlog-data` 볼륨과 `/app/backend/data` 마운트, 실제 `DATA_DIR` 경로를 확인하고 백업·복원을 검증합니다. 기존 `.env`와 Caddy 설정을 유지하고 HTTPS에서 `COOKIE_SECURE=true`인지 확인합니다. 데이터 볼륨을 제거하는 `docker compose down -v`는 사용하지 않습니다. 별도 운영 반영 시 외부 8000 차단, HTTPS와 인증서 자동 갱신을 확인합니다.
 
-순모임 녹음과 전사문을 검토하고 참석자별 나눔을 정리해 기존 `26_순보고서.docx`로 내려받는 웹앱입니다. 참석자 동의 후 Groq Whisper로 음성을 전사하고 Groq GPT-OSS로 보고서 초안을 만듭니다. 순장이 화자 연결과 결과를 확인하고 수정해야 합니다.
+## Groq 무료 운영
 
-## 시작하기
+Groq Console에서 Free 플랜을 유지하고 키는 서버 환경변수로 관리합니다. `GROQ_FREE_ONLY=true`에서 앱은 Whisper Turbo와 GPT-OSS 120B를 사용합니다. 플랜과 청구 상태는 Console에서 확인합니다. `.env.example`의 음성·텍스트 제한은 조직별 Limits에 맞추며 다른 앱의 사용량은 별도로 고려합니다. 한도에 도달하면 동시 녹음의 전사가 서버 대기열에 쌓일 수 있습니다. 녹음과 Groq 전송 전 참석자 동의를 받습니다.
 
-Python 가상환경에 `backend/requirements.txt`를 설치하고 `npm --prefix frontend install`을 실행합니다. `.env.example`을 참고해 환경변수를 설정한 뒤 `npm run dev`를 실행합니다. 배포 시 HTTPS와 `COOKIE_SECURE=true`를 사용하세요. 보고서 생성에는 설정 화면에서 교회의 원본 DOCX를 등록해야 합니다. 저장소의 원본 양식은 변경하지 않습니다.
+## 현재 개발 및 검증 현황
 
-## Groq Free 기반 운영
+- 사용자가 브라우저의 Groq 실시간 STT와 2026-11-17 Oracle HTTPS 연결을 확인했습니다. iPhone Safari/PWA 설치·세션 유지·장시간 녹음은 별도 실기기 검증 대상입니다.
+- iPhone 화면 잠금과 백그라운드는 녹음 지원 범위에서 제외합니다. Wake Lock과 페이지 비활성화·마이크 중단 안내는 후속 작업입니다.
+- 서버 측 초대제, 첫 관리자 생성, 운영 수준 계정 격리 검증, 실제 교회 양식과 Groq 분석을 포함한 종단 간 검증, 백업 복원과 TLS 자동 갱신 확인이 남아 있습니다. 2026-11-17에는 Caddy에서 공개 가입 경로를 차단했습니다.
 
-Groq Console에서 API 키를 발급하고 GitHub 저장소의 Settings → Secrets and variables → Codespaces에 `GROQ_API_KEY`를 등록하세요. Codespace를 재시작하거나 환경에 키가 반영되었는지 확인합니다. 키 값을 소스나 로그에 기록하지 마세요. STT는 `whisper-large-v3-turbo`, 분석은 Groq Chat Completions의 `openai/gpt-oss-120b`를 사용합니다. OpenAI API 키, 다른 공급자, Batch와 Flex는 사용하지 않습니다.
+## 로드맵 및 개발 기록
 
-`GROQ_FREE_ONLY=true`가 기본 설정이며 서버는 텍스트 모델을 GPT-OSS 120B로, 음성 모델을 Whisper Turbo로 고정합니다. 이 설정은 계정의 결제 플랜이나 청구를 확인하거나 강제할 수 없습니다. **사용자가 Groq Console에서 Free 플랜을 유지해야 하며, 실제 청구 여부는 Console에서 확인해야 합니다.** 이 앱은 플랜 변경이나 결제수단 등록을 하지 않습니다.
-
-`.env.example`의 `GROQ_RPM`, `GROQ_RPD`, `GROQ_ASH`, `GROQ_ASD`는 음성 제한, `GROQ_TEXT_RPM`, `GROQ_TEXT_RPD`, `GROQ_TEXT_TPM`, `GROQ_TEXT_TPD`는 분석 제한입니다. 조직의 [Limits 화면](https://console.groq.com/settings/limits)에 맞춰 설정하세요. 기본값은 각각 음성 20 RPM / 2,000 RPD / 7,200 ASH / 28,800 ASD, 텍스트 30 RPM / 1,000 RPD / 8,000 TPM / 200,000 TPD입니다. RPM/RPD는 분/일 요청 수, TPM/TPD는 분/일 토큰, ASH/ASD는 시간/일 음성 초입니다. [공식 제한표](https://console.groq.com/docs/rate-limits)는 변경되며 조직별 예외가 있을 수 있습니다. 이 로컬 보수적 카운터는 다른 앱의 사용량을 알지 못하므로 실제 제한이나 무료 이용을 보장하지 않습니다. STT 무료 업로드 파일 한도는 [공식 문서](https://console.groq.com/docs/speech-to-text)에 따라 25 MB이며 서버가 큰 파일을 분할합니다.
-
-직접 녹음은 약 15초 단위로 원본을 서버에 저장하고 영속 큐가 순서대로 전사합니다. 음성 한도에 도달하면 녹음을 계속 보관하며 큐에서 기다립니다. Groq 429는 Retry-After를 고려해 최대 3회 시도하고 이후 수동 재시도를 요구합니다. 업로드와 분석은 제한 시 보관된 원본이나 기존 보고서를 유지하고 수동 재시도를 안내합니다. 텍스트 분석은 작은 구간으로 나누고 SQLite에 요청 및 보수적인 토큰 예약을 기록합니다. 제한은 프로세스 재시작 후에도 유지되지만, 분석 자체의 부분 결과는 저장되지 않아 실패 후 전체 구간을 다시 분석합니다. 다른 제공자로 전환하지 않습니다.
-
-텍스트의 미확인 화자 발언은 분석 모델에 참석자별 내용으로 전달하지 않고 별도 검토 항목으로 보관합니다. 확인된 매핑도 자동 화자 분리가 아니므로 순장이 직접 확인해야 합니다. AI 결과의 사실성이나 기도제목 출처는 보장할 수 없습니다. 민감한 개인 정보가 Groq로 전송되므로 녹음과 외부 전송 전에 모든 참석자의 동의를 받고 결과를 검토하세요. 직접 녹음한 원본은 보관 기간 동안 서버에 남습니다. 로컬 검토 모드는 AI 호출 없이 수동 분류할 수 있습니다.
-
-6명이 같은 시간에 각각 2시간을 녹음하면 중첩 전송을 제외해도 시간당 21,600 음성 초가 필요합니다. 기본 7,200 ASH에서는 준실시간 처리가 밀립니다. 월 52시간의 총량만으로 실현 가능성을 보장할 수 없고, 모임의 일별·시간별 집중, 전송 중첩과 재시도, 각 조직의 실제 제한, 텍스트 토큰 사용량을 함께 고려해야 합니다. 외부 호스팅과 저장소 비용은 앱의 API 제한으로 통제되지 않으므로 월 5,000원 전체 예산도 별도 확인해야 합니다.
-
-## 검증 및 남은 작업
-
-자동 테스트는 `PYTHONPATH=. .venv/bin/pytest -q`, 프런트엔드 빌드는 `npm --prefix frontend run build`로 실행합니다. 테스트의 Groq 응답은 Mock이며 실제 Groq 호출이나 결제는 수행하지 않았습니다. 실제 한국어 STT, GPT-OSS의 스키마 수용과 분석 정확도, 장시간 실제 음성, 여러 순장 동시 사용 및 실제 무료 한도 내 운영은 별도 검증이 필요합니다. 특히 재시작 후 분석 부분 결과 복구, 텍스트 분석 요청의 영속 대기열과 월별 실제 토큰 표시, 자동 화자 분리는 아직 구현되지 않았습니다.
-
-## iOS 중심 UX 개편 진행 상황
-제품 방향은 순장이 대화에 집중하고, 모임 시작 → 녹음 → 전사 및 화자 확인 → 초안 검토 → DOCX 완성으로 이어지는 경험입니다.
-홈·기록·내 정보의 세 탭으로 진입 구조를 단순화했습니다. 홈에는 녹음 시작, 미완료 기록 이어하기, 최근 3개 기록을 제공합니다.
-화이트와 따뜻한 뉴트럴, 블루 강조색, 44px 이상 조작 영역, 큰 녹음 타이머, 시스템 다크모드 및 동작 줄이기 대응을 추가했습니다.
-웹 아이콘은 기존 Lucide를 유지하며 네이티브는 SF Symbols를 사용합니다.
-
-### 프로토타입 실행 및 검증
-기존 백엔드 실행 방법을 따른 뒤 `cd frontend && npm install && npm run dev`로 실행합니다.
-Codespaces에서 Vite 포트를 열어 iPhone 크기로 확인하세요. `npm run build`, `npm test`가 통과했습니다(기존 단위 테스트 3개).
-백엔드·사용자 데이터·DOCX 양식 및 생성 로직은 변경하지 않았습니다. 기존 API와 녹음 저장 경로를 유지했습니다.
-실제 브라우저 E2E, 320/375/390/430px 화면 검수, VoiceOver, 마이크 권한과 네트워크 단절 회귀 검증은 아직 수행하지 않았습니다.
-
-### 네이티브 및 남은 작업
-[iOS 실행 안내](ios/README.md)를 참고하세요. SwiftUI TabView/NavigationStack 및 쿠키 저장소를 사용하는 API 클라이언트 소스를 추가했습니다.
-**참고: 위 문단은 초기 프로토타입 시점 기록입니다.** 2026-11-08 기준 최신 [iOS 안내](ios/README.md)에는 SwiftUI 인증·AVFoundation 녹음·DOCX 미리보기 및 공유 흐름이 구현되었고 Xcode 빌드가 성공(컴파일 오류 0개)했다고 기록되어 있습니다. 단, 실제 서버·iPhone에서 종단 간 동작은 여전히 미검증입니다.
-웹 상세 작성은 기존 7단계 흐름이 남아 있습니다. 참석자 중심 편집, 자동 저장 UX 통합, 전사 구간 재생, 실제 iPhone 화면 검수와 접근성 검증이 다음 작업입니다.
-따라서 이번 변경은 전체 리디자인 완료가 아닌 첫 구현 단계입니다.
-
-### 이번 추가 작업 및 Mac 확인 사항
-
-웹 작성 화면의 진행 안내는 모임과 녹음, 나눔 확인, 보고서 완성의 세 구간으로 정리했습니다. 저장된 기존 7개 단계와 서버 API는 호환을 위해 유지합니다. 선택 항목은 접었고, 참석자별 보고서 편집을 펼쳐 볼 수 있습니다.
-`ios/project.yml`과 SwiftUI 로컬 녹음·음성 파일 공유 초안을 추가했습니다. **초기 작업 당시 기록:** 당시 네이티브 녹음과 서버 전사·보고서 연결 및 DOCX 공유는 미구현이었습니다. 최신 구현 상태는 아래 'iOS 구현 상태'와 [iOS 안내](ios/README.md)를 우선 확인하세요.
-Mac에서 XcodeGen으로 프로젝트를 생성하고 서명 설정, 실제 기기 녹음·중단·파일 보존·공유·접근성 검증을 수행하는 절차와 남은 구현은 [iOS 안내](ios/README.md)에 있습니다. Xcode 빌드는 실행하지 않았습니다.
-
-### iOS 구현 상태
-
-SwiftUI 앱에 기존 서버 인증·모임 관리, 구간 녹음/STT, 보고서 편집 및 DOCX 공유 흐름을 구현했습니다. **2026-11-08 Mac Xcode 빌드 성공(컴파일 오류 0개)**이 [iOS README](ios/README.md)에 기록되어 있습니다. 다만 시뮬레이터 실행과 실제 기기·운영 서버 연결, 로그인, 녹음/STT, DOCX 종단 간 검증은 완료하지 못했습니다. 이번 20261117 결정으로 배포 우선순위는 **초대제 PWA**이며 SwiftUI 소스는 보존합니다.
+- [Web/PWA 로드맵](docs/WEB_ROADMAP.md)
+- [2026-11-17 Oracle Cloud 구축 기록](docs/history/20261117-oracle-cloud.md)
+- [기존 웹·iOS 프로토타입 개발 기록](docs/history/20261119-prototype.md)
+- [기존 Groq 운영 및 검증 기록](docs/history/20261119-groq-free.md)
+- [2026-11-26 Web-first 결정과 iOS 아카이브 복원](docs/archive/ios-development.md)
